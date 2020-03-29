@@ -65,40 +65,66 @@ async function setContext(context: boolean)
 //#region Feedback.
 
 let decoratedEditor: vscode.TextEditor | undefined;
+
 const decorationTypeCapturedAnchor = vscode.window.createTextEditorDecorationType({
 	light: {
-		//backgroundColor: new vscode.ThemeColor("editor.selectionBackgroundColor"),
-		backgroundColor: "#7f7fff",
-		borderColor: "#3333337f"
+		borderColor: '#3333337f',
+		//backgroundColor: new vscode.ThemeColor('editor.selectionBackgroundColor'),
+		backgroundColor: '#7f7fff',
+		overviewRulerColor: '#7fffff'
 	},
 	dark: {
-		//backgroundColor: new vscode.ThemeColor("editor.selectionBackgroundColor"),
-		backgroundColor: "#00007f",
-		borderColor: "#cccccc7f"
+		borderColor: '#cccccc7f',
+		//backgroundColor: new vscode.ThemeColor('editor.selectionBackgroundColor'),
+		backgroundColor: '#00007f',
+		overviewRulerColor: '#00007f'
 	},
-	borderStyle: "dashed",
-	borderWidth: "1px",
+	borderStyle: 'dashed',
+	borderWidth: '1px',
 	overviewRulerLane: vscode.OverviewRulerLane.Full
 });
+
 const decorationTypeReplaceRange = vscode.window.createTextEditorDecorationType({
 	light: {
-		// backgroundColor: new vscode.ThemeColor("editor.wordHighlightBackgroundColor"),
-		backgroundColor: "#cccccc",
-		borderColor: "#3333337f"
+		// backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackgroundColor'),
+		backgroundColor: '#cccccc',
+		borderColor: '#3333337f'
 	},
 	dark: {
-		// backgroundColor: new vscode.ThemeColor("editor.wordHighlightBackgroundColor"),
-		backgroundColor: "#444444",
-		borderColor: "#cccccc7f"
+		// backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackgroundColor'),
+		backgroundColor: '#444444',
+		borderColor: '#cccccc7f'
 	},
-	borderStyle: "dashed",
-	borderWidth: "1px",
+	borderStyle: 'dashed',
+	borderWidth: '1px',
 	overviewRulerLane: vscode.OverviewRulerLane.Full
+});
+
+const decorationTypePeek = vscode.window.createTextEditorDecorationType({
+	light: {
+		after: {
+			color: '#cccccc',
+			backgroundColor: '#00007f'
+		}
+	},
+	dark: {
+		after: {
+			color: '#cccccc',
+			backgroundColor: '#00007f'
+		}
+	},
+	textDecoration: 'white-space: pre;'
+});
+
+const decorationTypeEmptyPeek = vscode.window.createTextEditorDecorationType({
+	textDecoration: 'white-space: pre;'
 });
 
 function clearFeedback()
 {
 	if (decoratedEditor) {
+		decoratedEditor.setDecorations(decorationTypePeek, []);
+		decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
 		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
 		decoratedEditor.setDecorations(decorationTypeReplaceRange, []);
 		decoratedEditor = undefined;
@@ -114,21 +140,77 @@ function showFeedback(editor: vscode.TextEditor)
 	decoratedEditor = editor;
 
 	if (capturedAnchor && (capturedAnchor.line !== replaceRange?.start.line || capturedAnchor.character !== replaceRange?.start.character)) {
-		const decorations = [{
+		// First and last completely visible lines in editor.
+		const firstVisibleLine = editor.visibleRanges[0].start.line;
+		const lastVisibleLine = editor.visibleRanges[0].end.line;
+
+		// If capturedAnchor is already visible no need to show preview.
+		const anchorIsVisible = firstVisibleLine <= capturedAnchor.line && capturedAnchor.line <= lastVisibleLine;
+		if (!anchorIsVisible) {
+			// Preview text => line number + captured completion text.
+			const peekLine = (lastVisibleLine === capturedAnchor.line) ? lastVisibleLine - 1 : lastVisibleLine;
+			let peekText = `From ${capturedAnchor.line}:  ## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}`;
+
+			// Replace whitespace indents with unicode white spaces => Otherwise they are not shown and the text is not indented to the correct position.
+			const unicodeWhitespace = String.fromCodePoint(0x00a0);
+			peekText = peekText.replace(/ /g, unicodeWhitespace);
+
+			// Handle tabs by replacing with 2 whitespaces for now.
+			peekText = peekText.replace(/\t/g, `${unicodeWhitespace}${unicodeWhitespace}`);
+
+			// Add 200 Unicode Whitespaces afterwards to push the text in this line out of screen.
+			peekText += Array(200).fill(unicodeWhitespace).join('');
+
+			const peekLinePos = new vscode.Position(peekLine, 0);
+			decoratedEditor.setDecorations(decorationTypePeek, [
+				{ // Preview content line decoration
+					range: new vscode.Range(peekLinePos, peekLinePos),
+					renderOptions: {
+						after: {
+							contentText: peekText
+						},
+					}
+				}
+			]);
+
+			if (peekLine === lastVisibleLine && peekLine + 1 < editor.document.lineCount) {
+				// Sometimes there is a half visible line below the complete visible line
+				// => add an empty text decoration here to push the original text of this line out of the screen.
+				const emptyText = Array(peekText.length).fill(unicodeWhitespace).join('');
+				const emptyLinePos = new vscode.Position(peekLine + 1, 0);
+				decoratedEditor.setDecorations(decorationTypeEmptyPeek, [
+					{ // Empty line decoration
+						range: new vscode.Range(emptyLinePos, emptyLinePos),
+						renderOptions: {
+							after: {
+								contentText: emptyText
+							}
+						}
+					}
+				]);
+			} else {
+				decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+			}
+		} else {
+			decoratedEditor.setDecorations(decorationTypePeek, []);
+			decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+		}
+
+		const anchorDecorations = [{
 			range: new vscode.Range(capturedAnchor, new vscode.Position(capturedAnchor.line, capturedAnchor.character + morePosition))
 		}];
-
-		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, decorations);
+		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, anchorDecorations);
 	} else {
+		decoratedEditor.setDecorations(decorationTypePeek, []);
+		decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
 		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
 	}
 
 	if (replaceRange) {
-		const decorations = [{
+		const replaceDecorations = [{
 			range: new vscode.Range(replaceRange.start, new vscode.Position(replaceRange.start.line, replaceRange.start.character + morePosition))
 		}];
-
-		decoratedEditor.setDecorations(decorationTypeReplaceRange, decorations);
+		decoratedEditor.setDecorations(decorationTypeReplaceRange, replaceDecorations);
 	} else {
 		decoratedEditor.setDecorations(decorationTypeReplaceRange, []);
 	}
