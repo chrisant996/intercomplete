@@ -1,0 +1,104 @@
+{
+	"name": "intercomplete",
+	"displayName": "Interactive Line Completion",
+	"description": "Interactive choose an anchor word and iteratively complete more following the anchor",
+	"version": "0.0.5",
+	"engines": {
+		"vscode": "^1.43.0"
+	},
+	"categories": [
+		"Snippets",
+		"Other"
+	],
+	"bugs": {
+		"url": "https://github.com/chrisant996/intercomplete/issues"
+	},
+	"homepage": "https://github.com/chrisant996/intercomplete/blob/master/README.md",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/chrisant996/intercomplete.git"
+	},
+	"activationEvents": [
+		"onCommand:intercomplete.nextInterComplete",
+		"onCommand:intercomplete.prevInterComplete",
+		"onCommand:intercomplete.moreInterComplete"
+	],
+	"main": "./out/intercomplete.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "intercomplete.prevInterComplete",
+				"when": "editorTextFocus && !editorReadonly",
+				"title": "Cycle to previous line completion candidate"
+			},
+			{
+				"command": "intercomplete.nextInterComplete",
+				"when": "editorTextFocus && !editorReadonly",
+				"title": "Cycle to next line completion candidate"
+			},
+			{
+				"command": "intercomplete.moreInterComplete",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"title": "Insert more of the completion candidate"
+			},
+			{
+				"command": "intercomplete.cancelInterComplete",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"title": "Cancel interactive line completion"
+			}
+		],
+		"keybindings": [
+			{
+				"key": "ctrl+shift+,",
+				"command": "intercomplete.prevInterComplete",
+				"when": "editorTextFocus && !editorReadonly",
+				"title": "Cycle to previous line completion candidate"
+			},
+			{
+				"key": "ctrl+shift+.",
+				"command": "intercomplete.nextInterComplete",
+				"when": "editorTextFocus && !editorReadonly",
+				"title": "Cycle to next line completion candidate"
+			},
+			{
+				"key": "ctrl+shift+space",
+				"command": "intercomplete.moreInterComplete",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"title": "Insert more of the completion candidate"
+			},
+			{
+				"key": "escape",
+				"command": "intercomplete.cancelInterComplete",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"title": "Cancel interactive line completion"
+			}
+		]
+	},
+	"configuration": [
+		{
+			"title": "Interactive Line Completion",
+			"properties": {}
+		}
+	],
+	"scripts": {
+		"vscode:prepublish": "npm run compile",
+		"compile": "tsc -p ./",
+		"lint": "eslint src --ext ts",
+		"watch": "tsc -watch -p ./",
+		"pretest": "npm run compile && npm run lint",
+		"test": "node ./out/test/runTest.js"
+	},
+	"devDependencies": {
+		"@types/glob": "^7.1.1",
+		"@types/mocha": "^7.0.1",
+		"@types/node": "^12.11.7",
+		"@types/vscode": "^1.43.0",
+		"eslint": "^6.8.0",
+		"@typescript-eslint/parser": "^2.18.0",
+		"@typescript-eslint/eslint-plugin": "^2.18.0",
+		"glob": "^7.1.6",
+		"mocha": "^7.0.1",
+		"typescript": "^3.7.5",
+		"vscode-test": "^1.3.0"
+	}
+}
