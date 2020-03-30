@@ -88,68 +88,77 @@ async function setContext(context: boolean)
 //#region Feedback.
 
 let decoratedEditor: vscode.TextEditor | undefined;
+let decorationTypeCapturedAnchor: vscode.TextEditorDecorationType | undefined;
+let decorationTypeReplaceRange: vscode.TextEditorDecorationType | undefined;
+let decorationTypePeek: vscode.TextEditorDecorationType | undefined;
+let decorationTypeEmptyPeek: vscode.TextEditorDecorationType | undefined;
 
-const decorationTypeCapturedAnchor = vscode.window.createTextEditorDecorationType({
-	light: {
-		borderColor: '#3333337f',
-		//backgroundColor: new vscode.ThemeColor('editor.selectionBackgroundColor'),
-		backgroundColor: '#7f7fff',
-		overviewRulerColor: '#7fffff'
-	},
-	dark: {
-		borderColor: '#dddddd7f',
-		//backgroundColor: new vscode.ThemeColor('editor.selectionBackgroundColor'),
-		backgroundColor: '#00007f',
-		overviewRulerColor: '#00007f'
-	},
-	borderStyle: 'dashed',
-	borderWidth: '1px',
-	overviewRulerLane: vscode.OverviewRulerLane.Full
-});
+function makeCapturedAnchorDecoration(): vscode.TextEditorDecorationType
+{
+	const fore = new vscode.ThemeColor('editor.foreground');
+	const back = new vscode.ThemeColor('editor.wordHighlightStrongBackground');
+	return vscode.window.createTextEditorDecorationType({
+		color: fore,
+		backgroundColor: back,
+		overviewRulerColor: back,
+		overviewRulerLane: vscode.OverviewRulerLane.Full,
+		borderColor: fore,
+		borderStyle: 'dashed',
+		borderWidth: '1px'
+	});
+}
 
-const decorationTypeReplaceRange = vscode.window.createTextEditorDecorationType({
-	light: {
-		// backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackgroundColor'),
-		backgroundColor: '#cccccc',
-		borderColor: '#3333337f'
-	},
-	dark: {
-		// backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackgroundColor'),
-		backgroundColor: '#444444',
-		borderColor: '#dddddd7f'
-	},
-	borderStyle: 'dashed',
-	borderWidth: '1px',
-	overviewRulerLane: vscode.OverviewRulerLane.Full
-});
+function makeReplaceRangeDecoration(): vscode.TextEditorDecorationType
+{
+	const fore = new vscode.ThemeColor('editor.foreground');
+	const back = new vscode.ThemeColor('editor.wordHighlightBackground');
+	return vscode.window.createTextEditorDecorationType({
+		color: fore,
+		backgroundColor: back,
+		borderColor: fore,
+		borderStyle: 'dashed',
+		borderWidth: '1px'
+	});
+}
 
-const decorationTypePeek = vscode.window.createTextEditorDecorationType({
-	light: {
+function makePeekDecoration(): vscode.TextEditorDecorationType
+{
+	const fore = new vscode.ThemeColor('editor.foreground');
+	const back = new vscode.ThemeColor('editor.wordHighlightStrongBackground');
+	return vscode.window.createTextEditorDecorationType({
 		after: {
-			color: '#dddddd',
-			backgroundColor: '#00007f'
-		}
-	},
-	dark: {
-		after: {
-			color: '#dddddd',
-			backgroundColor: '#00007f'
-		}
-	},
-	textDecoration: 'white-space: pre;'
-});
+			// borderColor: fore,
+			// borderStyle: 'solid none none none',
+			// borderWidth: '1px',
+			color: fore,
+			backgroundColor: back,
+		},
+		textDecoration: 'white-space: pre;'
+	});
+}
 
-const decorationTypeEmptyPeek = vscode.window.createTextEditorDecorationType({
-	textDecoration: 'white-space: pre;'
-});
+function makeEmptyPeekDecoration(): vscode.TextEditorDecorationType
+{
+	return vscode.window.createTextEditorDecorationType({
+		textDecoration: 'white-space: pre;'
+	});
+}
 
 function clearFeedback()
 {
 	if (decoratedEditor) {
-		decoratedEditor.setDecorations(decorationTypePeek, []);
-		decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
-		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
-		decoratedEditor.setDecorations(decorationTypeReplaceRange, []);
+		if (decorationTypePeek) {
+			decoratedEditor.setDecorations(decorationTypePeek, []);
+		}
+		if (decorationTypeEmptyPeek) {
+			decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+		}
+		if (decorationTypeCapturedAnchor) {
+			decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
+		}
+		if (decorationTypeReplaceRange) {
+			decoratedEditor.setDecorations(decorationTypeReplaceRange, []);
+		}
 		decoratedEditor = undefined;
 	}
 }
@@ -163,6 +172,21 @@ function showFeedback(editor: vscode.TextEditor)
 	}
 
 	decoratedEditor = editor;
+
+	//$ ensure the decoration types
+
+	if (!decorationTypePeek) {
+		decorationTypePeek = makePeekDecoration();
+	}
+	if (!decorationTypeEmptyPeek) {
+		decorationTypeEmptyPeek = makeEmptyPeekDecoration();
+	}
+	if (!decorationTypeCapturedAnchor) {
+		decorationTypeCapturedAnchor = makeCapturedAnchorDecoration();
+	}
+	if (!decorationTypeReplaceRange) {
+		decorationTypeReplaceRange = makeReplaceRangeDecoration();
+	}
 
 	if (capturedAnchor && (capturedAnchor.line !== replaceRange?.start.line || capturedAnchor.character !== replaceRange?.start.character)) {
 		// First and last completely visible lines in editor.
@@ -449,6 +473,13 @@ function onDidChangeConfiguration(cfg: vscode.ConfigurationChangeEvent)
 {
 	if (cfg.affectsConfiguration('intercomplete.debugMode')) {
 		updateDebugMode();
+	}
+	if (cfg.affectsConfiguration('workbench.colorCustomizations')) {
+		cancelInterComplete();
+		decorationTypePeek = undefined;
+		decorationTypeEmptyPeek = undefined;
+		decorationTypeCapturedAnchor = undefined;
+		decorationTypeReplaceRange = undefined;
 	}
 }
 
