@@ -1,27 +1,46 @@
 import * as vscode from 'vscode';
 
+/**
+ * inlineMode
+ * 
+ * Ideally intercomplete would detect when an edit or selection change happens
+ * that wasn't caused by intercomplete.  But VSCode drops or coalesces selection
+ * change notifications and document change notifications, making it very
+ * difficult to compensate for that.
+ * 
+ * @constant true		Uses inline mode, but gets confused by fast input.
+ * @constant false		NYI: Uses an input box, which is weird but reliable.
+ */
+const inlineMode = true;
+
 //#region Activate and Deactivate.
 
 export function activate(context: vscode.ExtensionContext)
 {
-	updateLogging();
+	updateDebugMode();
 
 	vscode.commands.executeCommand('setContext', INTERCOMPLETE_CONTEXT, false);
 
+	// Register commands.
 	context.subscriptions.push(
-
-		// Register commands.
 		vscode.commands.registerCommand('intercomplete.prevInterComplete', prevInterComplete),
 		vscode.commands.registerCommand('intercomplete.nextInterComplete', nextInterComplete),
 		vscode.commands.registerCommand('intercomplete.moreInterComplete', moreInterComplete),
-		vscode.commands.registerCommand('intercomplete.cancelInterComplete', cancelInterComplete),
-
-		// Register events.
-		vscode.workspace.onDidChangeConfiguration(onDidChangeConfiguration),
-		vscode.window.onDidChangeActiveTextEditor(onDidChangeActiveEditor),
-		vscode.window.onDidChangeTextEditorSelection(onDidChangeEditorSelection),
-		vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument)
+		vscode.commands.registerCommand('intercomplete.cancelInterComplete', cancelInterComplete)
 	);
+
+	// Register events.
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(onDidChangeConfiguration),
+		vscode.window.onDidChangeActiveTextEditor(onDidChangeActiveEditor)
+	);
+	
+	if (inlineMode) {
+		context.subscriptions.push(
+			vscode.window.onDidChangeTextEditorSelection(onDidChangeEditorSelection),
+			vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument)
+		);
+	}
 }
 
 export function deactivate() {}
@@ -40,10 +59,10 @@ function getConfig<type = vscode.WorkspaceConfiguration>(key?: string, section: 
 		configuration;
 }
 
-let log = false;
-function updateLogging()
+let debugMode = false;
+function updateDebugMode()
 {
-	log = getConfig<boolean>("logging");
+	debugMode = getConfig<boolean>("debugMode");
 }
 
 //#endregion
@@ -55,7 +74,11 @@ let intercompleteContext: boolean = false;				// There's no getContext API, so e
 
 async function setContext(context: boolean)
 {
-	if (log) { console.log(`setContext: ${INTERCOMPLETE_CONTEXT} = ${context?'true':'false'}`); }
+	if (!inlineMode) {
+		return;
+	}
+
+	if (debugMode) { console.log(`setContext: ${INTERCOMPLETE_CONTEXT} = ${context?'true':'false'}`); }
 	intercompleteContext = context;
 	await vscode.commands.executeCommand('setContext', INTERCOMPLETE_CONTEXT, context);
 }
@@ -74,7 +97,7 @@ const decorationTypeCapturedAnchor = vscode.window.createTextEditorDecorationTyp
 		overviewRulerColor: '#7fffff'
 	},
 	dark: {
-		borderColor: '#cccccc7f',
+		borderColor: '#dddddd7f',
 		//backgroundColor: new vscode.ThemeColor('editor.selectionBackgroundColor'),
 		backgroundColor: '#00007f',
 		overviewRulerColor: '#00007f'
@@ -93,7 +116,7 @@ const decorationTypeReplaceRange = vscode.window.createTextEditorDecorationType(
 	dark: {
 		// backgroundColor: new vscode.ThemeColor('editor.wordHighlightBackgroundColor'),
 		backgroundColor: '#444444',
-		borderColor: '#cccccc7f'
+		borderColor: '#dddddd7f'
 	},
 	borderStyle: 'dashed',
 	borderWidth: '1px',
@@ -103,13 +126,13 @@ const decorationTypeReplaceRange = vscode.window.createTextEditorDecorationType(
 const decorationTypePeek = vscode.window.createTextEditorDecorationType({
 	light: {
 		after: {
-			color: '#cccccc',
+			color: '#dddddd',
 			backgroundColor: '#00007f'
 		}
 	},
 	dark: {
 		after: {
-			color: '#cccccc',
+			color: '#dddddd',
 			backgroundColor: '#00007f'
 		}
 	},
@@ -133,6 +156,8 @@ function clearFeedback()
 
 function showFeedback(editor: vscode.TextEditor)
 {
+	if (debugMode && !replaceRange) { console.warn("showFeedback: can't show feedback; replaceRange is undefined"); }
+
 	if (editor !== decoratedEditor) {
 		clearFeedback();
 	}
@@ -141,11 +166,12 @@ function showFeedback(editor: vscode.TextEditor)
 
 	if (capturedAnchor && (capturedAnchor.line !== replaceRange?.start.line || capturedAnchor.character !== replaceRange?.start.character)) {
 		// First and last completely visible lines in editor.
+		if (debugMode && editor.visibleRanges.length < 1) { console.warn('showFeedback: the editor has no visible lines'); }
 		const firstVisibleLine = editor.visibleRanges[0].start.line;
 		const lastVisibleLine = editor.visibleRanges[0].end.line;
 
 		// If capturedAnchor is already visible no need to show preview.
-		const anchorIsVisible = firstVisibleLine <= capturedAnchor.line && capturedAnchor.line <= lastVisibleLine;
+		const anchorIsVisible = false;//firstVisibleLine <= capturedAnchor.line && capturedAnchor.line <= lastVisibleLine;
 		if (!anchorIsVisible) {
 			// Preview text => line number + captured completion text.
 			const peekLine = (lastVisibleLine === capturedAnchor.line) ? lastVisibleLine - 1 : lastVisibleLine;
@@ -245,6 +271,9 @@ async function clearCapture()
 		endOfPrev = false;
 		endOfNext = false;
 
+		expectedSelectionChanges = [];
+		expectedDocumentChanges = [];
+
 		clearFeedback();
 	}
 }
@@ -252,11 +281,9 @@ async function clearCapture()
 async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 {
 	if (!replaceRange) {
-		if (log) { console.log("insertCapturedText: replaceRange undefined"); }
+		if (debugMode) { console.warn("insertCapturedText: replaceRange undefined"); }
 		return;
 	}
-
-	busy++;
 
 	try {
 
@@ -265,11 +292,17 @@ async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 			capturedAnchor = new vscode.Position(capturedAnchor.line, capturedAnchor.character + delta);
 		}
 
+		const replaceWith = capturedText.substr(0, morePosition);
+
+		expectedSelectionChanges.push(replaceRange.start.character + morePosition);
+		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.end.character, text: "" });
+		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.start.character, text: replaceWith });
+
 		await editor.edit(e =>
 		{
 			if (replaceRange) {
 				e.delete(replaceRange);
-				e.insert(replaceRange.start, capturedText.substr(0, morePosition));
+				e.insert(replaceRange.start, replaceWith);
 			}
 		});
 
@@ -280,8 +313,6 @@ async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 
 	} catch (error) {
 	}
-
-	busy--;
 }
 
 async function captureAnchor(line: number, character: number)
@@ -293,7 +324,7 @@ async function captureAnchor(line: number, character: number)
 	capturedText = "";
 	morePosition = 0;
 
-	if (log) { console.log(`captureAnchor: new anchor {${line},${character}}`); }
+	if (debugMode) { console.log(`captureAnchor: new anchor {${line},${character}}`); }
 
 	intercompleteContext = true;
 	await setContext(true);
@@ -302,7 +333,7 @@ async function captureAnchor(line: number, character: number)
 async function captureLine(editor: vscode.TextEditor, line: number, character: number): Promise<void>
 {
 	if (replaceRange === undefined || capturedKeyword === undefined) {
-		if (log) { console.log("captureLine: replaceRange or capturedKeyword not defined yet"); }
+		if (debugMode) { console.log("captureLine: replaceRange or capturedKeyword not defined yet"); }
 		return;
 	}
 
@@ -323,7 +354,7 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 		}
 	}
 
-	if (log) { console.log(`captureLine: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
+	if (debugMode) { console.log(`captureLine: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
 
 	await insertCapturedText(editor);
 }
@@ -331,7 +362,7 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 async function anchorNextPrev(editor: vscode.TextEditor, next: boolean): Promise<void>
 {
 	if (!capturedAnchor) {
-		if (log) { console.log("anchorNextPrev: no anchor"); }
+		if (debugMode) { console.log("anchorNextPrev: no anchor"); }
 		return;
 	}
 
@@ -398,19 +429,26 @@ async function anchorNextPrev(editor: vscode.TextEditor, next: boolean): Promise
 		}
 	}
 
-	if (log) { console.log("anchorNextPrev: no more matches"); }
+	if (debugMode) { console.log("anchorNextPrev: no more matches"); }
 }
 
 //#endregion
 
 //#region Event handlers.
 
-let busy = 0;
+type ExpectedDocumentChange = {
+	start: number;
+	end: number;
+	text: string;
+};
+
+let expectedSelectionChanges: number[] = [];
+let expectedDocumentChanges: ExpectedDocumentChange[] = [];
 
 function onDidChangeConfiguration(cfg: vscode.ConfigurationChangeEvent)
 {
-	if (cfg.affectsConfiguration('intercomplete.logging')) {
-		updateLogging();
+	if (cfg.affectsConfiguration('intercomplete.debugMode')) {
+		updateDebugMode();
 	}
 }
 
@@ -419,28 +457,147 @@ async function onDidChangeActiveEditor(editor: vscode.TextEditor | undefined)
 	await clearCapture();
 }
 
+function testExpectedSelectionChange(character: number): boolean
+{
+	while (true) {
+		// No expected changes => bad.
+		const expected = expectedSelectionChanges.shift();
+		if (!expected) { break; }
+
+		// Change matched an expected change => good, return!
+		if (character === expected) {
+			return true;
+		}
+
+		// Change didn't match the next expected change => keep looking.
+		if (debugMode) { console.log(`testExpectedSelectionChange: ate expected selection change ${expected}`); }
+	}
+
+	return false;
+}
+
 async function onDidChangeEditorSelection(e: vscode.TextEditorSelectionChangeEvent)
 {
-	if (!capturedAnchor || busy > 0) {
+	if (!capturedAnchor || !replaceRange) {
 		return;
 	}
 
 	do {
+		// No expected changes => cancel.
+		if (expectedSelectionChanges.length < 1) { break; }
+
+		// Multiple selections => cancel.
 		if (e.selections.length !== 1) { break; }
-		if (e.selections[0].active.line !== capturedAnchor.line) { break; }
-		if (e.selections[0].anchor.line !== capturedAnchor.line) { break; }
-		if (e.selections[0].active.character !== capturedAnchor.character) { break; }
-		if (e.selections[0].anchor.character !== capturedAnchor.character) { break; }
-		return;
+
+		// Other line selected => cancel.
+		const sel = e.selections[0];
+		if (sel.active.line !== replaceRange.start.line) { break; }
+		if (sel.anchor.line !== replaceRange.start.line) { break; }
+
+		// Selection isn't empty => cancel.
+		if (sel.active.character !== sel.anchor.character) { break; }
+
+		// Change doesn't match an expected change => cancel.
+		if (!testExpectedSelectionChange(sel.active.character)) { break; }
+
+		// Change matched expected change => don't cancel.
+		return true;
 	} while (false);
+
+	if (debugMode) {
+		console.log('unexpected selection change:');
+		if (e.selections.length > 0) {
+			for (let sel of e.selections) {
+				console.log(`    ${sel.start.line},${sel.start.character}..${sel.end.line},${sel.end.character}`);
+			}
+		} else {
+			console.log('    no selections');
+		}
+		console.log(`expected selection changes on line ${replaceRange.start.line}:`);
+		if (expectedSelectionChanges.length > 0) {
+			for (let expected of expectedSelectionChanges) {
+				console.log(`    ${expected}`);
+			}
+		} else {
+			console.log('    none');
+		}
+	}
 
 	await clearCapture();
 }
 
+function testExpectedDocumentChange(chg: vscode.TextDocumentContentChangeEvent, expectedLine: number): boolean
+{
+	while (true) {
+		// No expected changes => bad.
+		const expected = expectedDocumentChanges.shift();
+		if (!expected) { break; }
+
+		// Change matches an expected change => good, return!
+		if (chg.range.start.character === expected.start && chg.range.end.character === expected.end && chg.text === expected.text) {
+			return true;
+		}
+
+		// Change didn't match the next expected change => keep looking.
+		if (debugMode) { console.log(`testExpectedDocumentChange: ate expected document change ${expectedLine},${expected.start}..${expectedLine},${expected.end}, "${expected.text}"`); }
+	}
+
+	return false;
+}
+
 async function onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent)
 {
-	if (!capturedAnchor || busy > 0) {
+	if (!capturedAnchor || !replaceRange) {
 		return;
+	}
+
+	let cancel = false;
+	let chg: vscode.TextDocumentContentChangeEvent | null = null;
+	for (chg of e.contentChanges) {
+		cancel = true;
+
+		// No expected changes => cancel.
+		if (expectedDocumentChanges.length < 1) { break; }
+
+		// No changed range => cancel (but supposedly impossible).
+		if (chg.range === undefined) {
+			if (debugMode) { console.warn('onDidChangeTextDocument: unexpected -- chg.range is undefined'); }
+			break;
+		}
+
+		// Change to an unexpected line => cancel.
+		if (chg.range.start.line !== replaceRange.start.line) { break; }
+		if (chg.range.end.line !== replaceRange.start.line) { break; }
+
+		// Change doesn't match an expected change => cancel.
+		if (!testExpectedDocumentChange(chg, replaceRange.start.line)) { break; }
+
+		// If the loop ends because this was the last change => don't cancel.
+		cancel = false;
+	}
+
+	if (!cancel) {
+		return;
+	}
+
+	if (debugMode) {
+		if (chg) {
+			if (chg.range === undefined) {
+				console.log('unexpected document change: range is undefined');
+			} else {
+				console.log(`unexpected document change: ${chg.range.start.line},${chg.range.start.character}..${chg.range.end.line},${chg.range.end.character}, "${chg.text}"`);
+			}
+			console.log(`expected changes on line ${replaceRange.start.line}:`);
+			if (expectedDocumentChanges.length > 0) {
+				for (let expected of expectedDocumentChanges) {
+					console.log(`    ${replaceRange.start.line},${expected.start}..${replaceRange.start.line},${expected.end}, "${expected.text}"`);
+				}
+			} else {
+				console.log('    none');
+			}
+		} else {
+			console.warn('unexpected (lack of) document changes -- this should be unreachable');
+		}
 	}
 
 	await clearCapture();
@@ -453,7 +610,7 @@ async function onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent)
 export async function prevInterComplete(): Promise<void>
 {
 	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor) {
+	if (!editor || editor.selections.length !== 1) {
 		return;
 	}
 
@@ -463,7 +620,7 @@ export async function prevInterComplete(): Promise<void>
 export async function nextInterComplete(): Promise<void>
 {
 	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor) {
+	if (!editor || editor.selections.length !== 1) {
 		return;
 	}
 
@@ -489,7 +646,7 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean): Promis
 		}
 
 		if (start > end) {
-			if (log) { console.log("nextprevCapture: couldn't initialize a new capture."); }
+			if (debugMode) { console.log("nextprevCapture: couldn't initialize a new capture."); }
 			return;
 		}
 
@@ -505,12 +662,12 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean): Promis
 export async function moreInterComplete(): Promise<void>
 {
 	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor) {
+	if (!editor || editor.selections.length !== 1) {
 		return;
 	}
 
 	if (!capturedAnchor || morePosition === 0) {
-		if (log) { console.log("moreInterComplete: nothing captured yet."); }
+		if (debugMode) { console.log("moreInterComplete: nothing captured yet."); }
 		return;
 	}
 
@@ -530,7 +687,7 @@ export async function moreInterComplete(): Promise<void>
 		morePosition++;
 	}
 
-	if (log) { console.log(`moreInterComplete: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
+	if (debugMode) { console.log(`moreInterComplete: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
 
 	return insertCapturedText(editor);
 }

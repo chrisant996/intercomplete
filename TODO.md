@@ -1,6 +1,12 @@
 # TODO
 
+* Build a modal solution, maybe using an input box.
+* Is there a way to put borders on the inline mode decorations?
+* How to use theme colors in the inline mode decorations?
+
 ## BUGS
+
+* Inline mode gets confused by dropped/coalesced selection change and document change events.
 
 ## FEATURES
 
