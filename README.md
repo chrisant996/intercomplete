@@ -8,7 +8,7 @@ _TBD_
 
 ## Extension Settings
 
-* `intercomplete.logging`: boolean -- enables debug logging; false by default.
+* `intercomplete.debugMode`: boolean -- enables debug logging; false by default.
 
 ## Known Issues
 
