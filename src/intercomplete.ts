@@ -46,6 +46,8 @@ export function activate(context: vscode.ExtensionContext)
 {
 	vscode.commands.executeCommand('setContext', INTERCOMPLETE_CONTEXT, false);
 
+	initFeedbackModeFromConfig();
+
 	// Register commands.
 	context.subscriptions.push(
 		vscode.commands.registerCommand('intercomplete.prevInterComplete', prevInterComplete),
@@ -168,6 +170,19 @@ function makeEmptyPeekDecoration(): vscode.TextEditorDecorationType
 		// },
 		textDecoration: 'white-space: pre;'
 	});
+}
+
+function initFeedbackModeFromConfig()
+{
+	switch (getConfig<string>('feedbackMode')) {
+		default:
+		case 'decoration':
+			feedbackMode = FeedbackMode.Decoration;
+			break;
+		case 'status bar':
+			feedbackMode = FeedbackMode.StatusBarItem;
+			break;
+	}
 }
 
 function clearPeekFeedback()
@@ -602,6 +617,7 @@ function onDidChangeConfiguration(cfg: vscode.ConfigurationChangeEvent)
 			statusBarItem.dispose();
 			statusBarItem = null;
 		}
+		initFeedbackModeFromConfig();
 	}
 
 	if (reset) {
