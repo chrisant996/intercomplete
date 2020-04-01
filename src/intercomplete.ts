@@ -78,7 +78,7 @@ async function setContext(context: boolean)
 		return;
 	}
 
-	if (debugMode) { console.log(`setContext: ${INTERCOMPLETE_CONTEXT} = ${context?'true':'false'}`); }
+	if (debugMode && intercompleteContext !== context) { console.log(`setContext: ${INTERCOMPLETE_CONTEXT} = ${context?'true':'false'}`); }
 	intercompleteContext = context;
 	await vscode.commands.executeCommand('setContext', INTERCOMPLETE_CONTEXT, context);
 }
@@ -283,6 +283,8 @@ const wordRegExp = /\w/;
 async function clearCapture()
 {
 	if (intercompleteContext) {
+		if (debugMode) { console.trace('clearCapture'); }
+		
 		await setContext(false);
 
 		intercompleteContext = false;
@@ -302,11 +304,15 @@ async function clearCapture()
 	}
 }
 
-async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
+async function insertCapturedText(editor: vscode.TextEditor, cookie: number)
 {
 	if (!replaceRange) {
 		if (debugMode) { console.warn("insertCapturedText: replaceRange undefined"); }
 		return;
+	}
+
+	if (debugMode) {
+		console.log(`insertCapturedText ${cookie}:`);
 	}
 
 	try {
@@ -322,6 +328,20 @@ async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.end.character, text: "" });
 		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.start.character, text: replaceWith });
 
+		if (debugMode) {
+			console.warn(`insertCapturedText ${cookie}: ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.end.line},${replaceRange.end.character} "${replaceWith}"`);
+			console.log(`  morePosition ${morePosition}`);
+			console.log('  insertCapturedText: expected changes...');
+			console.log('    expected selection changes:');
+			for (let sc of expectedSelectionChanges) {
+				console.log(`      ${replaceRange.start.line},${sc}`);
+			}
+			console.log('    expected document changes:');
+			for (let dc of expectedDocumentChanges) {
+				console.log(`      ${replaceRange.start.line},${dc.start}..${replaceRange.start.line},${dc.end} "${dc.text}"`);
+			}
+		}
+
 		await editor.edit(e =>
 		{
 			if (replaceRange) {
@@ -329,6 +349,12 @@ async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 				e.insert(replaceRange.start, replaceWith);
 			}
 		});
+
+		if (debugMode) {
+			console.log(`insertCapturedText ${cookie}: after editor.edit...`);
+			console.log(`insertCapturedText ${cookie}: set replaceRange = ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.start.line},${replaceRange.start.character + morePosition}`);
+			console.log(`insertCapturedText ${cookie}: set editor.selection = ${replaceRange.end.line},${replaceRange.end.character}`);
+		}
 
 		replaceRange = new vscode.Range(replaceRange.start.line, replaceRange.start.character, replaceRange.start.line, replaceRange.start.character + morePosition);
 		editor.selection = new vscode.Selection(replaceRange.end, replaceRange.end);
@@ -339,7 +365,7 @@ async function insertCapturedText(editor: vscode.TextEditor): Promise<void>
 	}
 }
 
-async function captureAnchor(line: number, character: number)
+async function captureAnchor(line: number, character: number, cookie: number)
 {
 	capturedAnchor = new vscode.Position(line, character);
 	endOfPrev = false;
@@ -348,27 +374,31 @@ async function captureAnchor(line: number, character: number)
 	capturedText = "";
 	morePosition = 0;
 
-	if (debugMode) { console.log(`captureAnchor: new anchor {${line},${character}}`); }
+	if (debugMode) { console.log(`captureAnchor ${cookie}: new anchor {${line},${character}}`); }
 
 	intercompleteContext = true;
 	await setContext(true);
 }
 
-async function captureLine(editor: vscode.TextEditor, line: number, character: number): Promise<void>
+async function captureLine(editor: vscode.TextEditor, line: number, character: number, cookie:number)
 {
 	if (replaceRange === undefined || capturedKeyword === undefined) {
 		if (debugMode) { console.log("captureLine: replaceRange or capturedKeyword not defined yet"); }
 		return;
 	}
 
-	await captureAnchor(line, character);
+	if (debugMode) { console.log(`captureLine ${cookie}: ${line},${character}`); }
+
+	await captureAnchor(line, character, cookie);
 
 	const docLine = editor.document.lineAt(line);
 	capturedText = docLine.text.substr(character);
 
+	if (debugMode) { console.log(`captureLine ${cookie}: morePosition = 0`); }
 	morePosition = 0;
 	if (line === replaceRange.start.line && character === replaceRange.start.character) {
 		morePosition = capturedKeyword.length;
+		if (debugMode) { console.log(`captureLine ${cookie}: capturedAnchor === replaceRange.start`); }
 	} else {
 		while (morePosition < capturedText.length) {
 			if (wordRegExp.exec(capturedText.charAt(morePosition)) === null) {
@@ -378,12 +408,15 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 		}
 	}
 
-	if (debugMode) { console.log(`captureLine: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
+	if (debugMode) {
+		console.log(`captureLine ${cookie}: morePosition = ${morePosition}`);
+		console.log(`captureLine ${cookie}: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`);
+	}
 
-	await insertCapturedText(editor);
+	await insertCapturedText(editor, cookie);
 }
 
-async function anchorNextPrev(editor: vscode.TextEditor, next: boolean): Promise<void>
+async function anchorNextPrev(editor: vscode.TextEditor, next: boolean, cookie: number)
 {
 	if (!capturedAnchor) {
 		if (debugMode) { console.log("anchorNextPrev: no anchor"); }
@@ -417,7 +450,7 @@ async function anchorNextPrev(editor: vscode.TextEditor, next: boolean): Promise
 					}
 					const match: RegExpExecArray | null = regexp.exec(str);
 					if (match) {
-						return captureLine(editor, yy, xx + match.index + match[1].length);
+						return captureLine(editor, yy, xx + match.index + match[1].length, cookie);
 					}
 				}
 				xx = 0;
@@ -443,7 +476,7 @@ async function anchorNextPrev(editor: vscode.TextEditor, next: boolean): Promise
 					lastMatch = match;
 				}
 				if (lastMatch) {
-					return captureLine(editor, yy, lastMatch.index + lastMatch[1].length);
+					return captureLine(editor, yy, lastMatch.index + lastMatch[1].length, cookie);
 				}
 				xx = -1;
 				yy--;
@@ -513,33 +546,12 @@ async function onDidChangeEditorSelection(e: vscode.TextEditorSelectionChangeEve
 		return;
 	}
 
-	do {
-		// No expected changes => cancel.
-		if (expectedSelectionChanges.length < 1) { break; }
-
-		// Multiple selections => cancel.
-		if (e.selections.length !== 1) { break; }
-
-		// Other line selected => cancel.
-		const sel = e.selections[0];
-		if (sel.active.line !== replaceRange.start.line) { break; }
-		if (sel.anchor.line !== replaceRange.start.line) { break; }
-
-		// Selection isn't empty => cancel.
-		if (sel.active.character !== sel.anchor.character) { break; }
-
-		// Change doesn't match an expected change => cancel.
-		if (!testExpectedSelectionChange(sel.active.character)) { break; }
-
-		// Change matched expected change => don't cancel.
-		return true;
-	} while (false);
-
 	if (debugMode) {
-		console.log('unexpected selection change:');
+		console.warn('onDidChangeEditorSelection: selection change:');
 		if (e.selections.length > 0) {
+			let ii = 0;
 			for (let sel of e.selections) {
-				console.log(`    ${sel.start.line},${sel.start.character}..${sel.end.line},${sel.end.character}`);
+				console.log(`    [${ii++}]:  ${sel.start.line},${sel.start.character}..${sel.end.line},${sel.end.character}`);
 			}
 		} else {
 			console.log('    no selections');
@@ -553,6 +565,46 @@ async function onDidChangeEditorSelection(e: vscode.TextEditorSelectionChangeEve
 			console.log('    none');
 		}
 	}
+
+	do {
+		// No expected changes => cancel.
+		if (expectedSelectionChanges.length < 1) {
+			if (debugMode) { console.log('    no selection changes expected => cancel'); }
+			break;
+		}
+
+		// Multiple selections => cancel.
+		if (e.selections.length !== 1) {
+			if (debugMode) { console.log('    wrong number of selections => cancel'); }
+			break;
+		}
+
+		// Other line selected => cancel.
+		const sel = e.selections[0];
+		if (sel.active.line !== replaceRange.start.line) {
+			if (debugMode) { console.log('    some other line selected => cancel'); }
+			break;
+		}
+		if (sel.anchor.line !== replaceRange.start.line) {
+			if (debugMode) { console.log('    some other line selected => cancel'); }
+			break;
+		}
+
+		// Selection isn't empty => cancel.
+		if (sel.active.character !== sel.anchor.character) {
+			if (debugMode) { console.log('    selection isn\'t empty => cancel'); }
+			break;
+		}
+
+		// Change doesn't match an expected change => cancel.
+		if (!testExpectedSelectionChange(sel.active.character)) {
+			if (debugMode) { console.log(`    doesn't match any expected selection change => cancel`); }
+			break;
+		}
+
+		// Change matched expected change => don't cancel.
+		return true;
+	} while (false);
 
 	await clearCapture();
 }
@@ -570,7 +622,7 @@ function testExpectedDocumentChange(chg: vscode.TextDocumentContentChangeEvent, 
 		}
 
 		// Change didn't match the next expected change => keep looking.
-		if (debugMode) { console.log(`testExpectedDocumentChange: ate expected document change ${expectedLine},${expected.start}..${expectedLine},${expected.end}, "${expected.text}"`); }
+		if (debugMode) { console.log(`    testExpectedDocumentChange: ate expected document change ${expectedLine},${expected.start}..${expectedLine},${expected.end}, "${expected.text}"`); }
 	}
 
 	return false;
@@ -582,61 +634,65 @@ async function onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent)
 		return;
 	}
 
+	let ii = 0;
+	if (debugMode) {
+		console.warn('onDidChangeTextDocument: content changes:');
+		for (let chg of e.contentChanges) {
+			console.log(`    [${ii++}]:  ${chg.range.start.line},${chg.range.start.character}..${chg.range.end.line},${chg.range.end.character}, "${chg.text}"`);
+		}
+		console.log('processing content changes:');
+		ii = 0;
+	}
+
 	let cancel = false;
 	let chg: vscode.TextDocumentContentChangeEvent | null = null;
 	for (chg of e.contentChanges) {
 		cancel = true;
 
+		if (debugMode) { console.log(`    [${ii++}]`); }
+
 		// No expected changes => cancel.
-		if (expectedDocumentChanges.length < 1) { break; }
+		if (expectedDocumentChanges.length < 1) {
+			if (debugMode) { console.log('    no document changes expected => cancel'); }
+			break;
+		}
 
 		// No changed range => cancel (but supposedly impossible).
 		if (chg.range === undefined) {
-			if (debugMode) { console.warn('onDidChangeTextDocument: unexpected -- chg.range is undefined'); }
+			if (debugMode) { console.log('    chg.range is undefined => cancel'); }
 			break;
 		}
 
 		// Change to an unexpected line => cancel.
-		if (chg.range.start.line !== replaceRange.start.line) { break; }
-		if (chg.range.end.line !== replaceRange.start.line) { break; }
+		if (chg.range.start.line !== replaceRange.start.line) {
+			if (debugMode) { console.log(`    chg.range.start.line ${chg.range.start.line} !== replaceRange.start.line ${replaceRange.start.line} => cancel`); }
+			break;
+		}
+		if (chg.range.end.line !== replaceRange.start.line) {
+			if (debugMode) { console.log(`    chg.range.end.line ${chg.range.end.line} !== replaceRange.start.line ${replaceRange.start.line} => cancel`); }
+			break;
+		}
 
 		// Change doesn't match an expected change => cancel.
-		if (!testExpectedDocumentChange(chg, replaceRange.start.line)) { break; }
+		if (!testExpectedDocumentChange(chg, replaceRange.start.line)) {
+			if (debugMode) { console.log(`    doesn't match any expected document change => cancel`); }
+			break;
+		}
 
 		// If the loop ends because this was the last change => don't cancel.
 		cancel = false;
 	}
 
-	if (!cancel) {
-		return;
+	if (cancel) {
+		await clearCapture();
 	}
-
-	if (debugMode) {
-		if (chg) {
-			if (chg.range === undefined) {
-				console.log('unexpected document change: range is undefined');
-			} else {
-				console.log(`unexpected document change: ${chg.range.start.line},${chg.range.start.character}..${chg.range.end.line},${chg.range.end.character}, "${chg.text}"`);
-			}
-			console.log(`expected changes on line ${replaceRange.start.line}:`);
-			if (expectedDocumentChanges.length > 0) {
-				for (let expected of expectedDocumentChanges) {
-					console.log(`    ${replaceRange.start.line},${expected.start}..${replaceRange.start.line},${expected.end}, "${expected.text}"`);
-				}
-			} else {
-				console.log('    none');
-			}
-		} else {
-			console.warn('unexpected (lack of) document changes -- this should be unreachable');
-		}
-	}
-
-	await clearCapture();
 }
 
 //#endregion
 
 //#region Command handlers.
+
+let commandNumber = 0;
 
 export async function prevInterComplete(): Promise<void>
 {
@@ -645,7 +701,12 @@ export async function prevInterComplete(): Promise<void>
 		return;
 	}
 
-	return nextprevCapture(editor, false/*next*/);
+	if (debugMode) {
+		commandNumber++;
+		console.log(`prevInterComplete: commandNumber ${commandNumber}`);
+	}
+
+	return nextprevCapture(editor, false/*next*/, commandNumber);
 }
 
 export async function nextInterComplete(): Promise<void>
@@ -655,12 +716,19 @@ export async function nextInterComplete(): Promise<void>
 		return;
 	}
 
-	return nextprevCapture(editor, true/*next*/);
+	if (debugMode) {
+		commandNumber++;
+		console.log(`nextInterComplete: commandNumber ${commandNumber}`);
+	}
+
+	return nextprevCapture(editor, true/*next*/, commandNumber);
 }
 
-async function nextprevCapture(editor: vscode.TextEditor, next: boolean): Promise<void>
+async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie: number): Promise<void>
 {
 	if (!capturedAnchor) {
+		if (debugMode) { console.log(`nextprevCapture ${cookie}: capturedAnchor is undefined -- start a new capture`); }
+
 		// Make sure it's pristine -- e.g. endOfNext/etc may not be reset yet.
 		await clearCapture();
 
@@ -677,17 +745,20 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean): Promis
 		}
 
 		if (start > end) {
-			if (debugMode) { console.log("nextprevCapture: couldn't initialize a new capture."); }
+			if (debugMode) { console.log(`nextprevCapture ${cookie}: couldn't initialize a new capture.`); }
 			return;
 		}
 
+		if (debugMode) { console.log(`nextprevCapture ${cookie}: set replaceRange = ${pos.line},${start}..${pos.line},${end}`); }
 		replaceRange = new vscode.Range(pos.line, start, pos.line, end);
 
 		capturedKeyword = line.text.substring(start, end);
-		await captureAnchor(pos.line, start);
+		await captureAnchor(pos.line, start, cookie);
 	}
 
-	await anchorNextPrev(editor, next);
+	await anchorNextPrev(editor, next, cookie);
+
+	if (debugMode) { console.log(`nextprevCapture ${cookie}: finished`); }
 }
 
 export async function moreInterComplete(): Promise<void>
@@ -697,8 +768,18 @@ export async function moreInterComplete(): Promise<void>
 		return;
 	}
 
+	if (debugMode) {
+		commandNumber++;
+		console.log(`moreInterComplete: commandNumber ${commandNumber}`);
+	}
+
+	return moreCapture(editor, commandNumber);
+}
+
+async function moreCapture(editor: vscode.TextEditor, cookie: number)
+{
 	if (!capturedAnchor || morePosition === 0) {
-		if (debugMode) { console.log("moreInterComplete: nothing captured yet."); }
+		if (debugMode) { console.log(`moreCapture ${cookie}: nothing captured yet.`); }
 		return;
 	}
 
@@ -718,9 +799,11 @@ export async function moreInterComplete(): Promise<void>
 		morePosition++;
 	}
 
-	if (debugMode) { console.log(`moreInterComplete: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
+	if (debugMode) { console.log(`moreCapture ${cookie}: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
 
-	return insertCapturedText(editor);
+	await insertCapturedText(editor, cookie);
+
+	if (debugMode) { console.log(`moreCapture ${cookie}: finished`); }
 }
 
 export async function cancelInterComplete(): Promise<void>
