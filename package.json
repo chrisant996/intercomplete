@@ -53,25 +53,41 @@
 				"key": "ctrl+shift+,",
 				"command": "intercomplete.prevInterComplete",
 				"when": "editorTextFocus && !editorReadonly",
-				"title": "Cycle to previous line completion candidate"
 			},
 			{
 				"key": "ctrl+shift+.",
 				"command": "intercomplete.nextInterComplete",
 				"when": "editorTextFocus && !editorReadonly",
-				"title": "Cycle to next line completion candidate"
 			},
 			{
 				"key": "ctrl+shift+space",
 				"command": "intercomplete.moreInterComplete",
 				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
-				"title": "Insert more of the completion candidate"
 			},
 			{
 				"key": "escape",
 				"command": "intercomplete.cancelInterComplete",
 				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
-				"title": "Cancel interactive line completion"
+			}
+		],
+		"configuration": [
+			{
+				"title": "InterComplete",
+				"properties": {
+					"intercomplete.feedbackMode": {
+						"type": "string",
+						"enum": [
+							"decoration",
+							"status bar"
+						],
+						"enumDescriptions": [
+							"Shows completion feedback using text decoration at the bottom of the window",
+							"Shows completion feedback in the status bar"
+						],
+						"default": "decoration",
+						"description": "how to show feedback about the current interactive completion"
+					}
+				}
 			}
 		]
 	},

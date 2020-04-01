@@ -4,14 +4,6 @@
 
 ## BUGS
 
-> Dismiss intellisense popups if possible!
-
-> Basically the peek is a hack that's not going to work out:
-> * Scrolling moves the peek -- should hide and show.
-> * Make the peek use more lines so it isn't obscured by the horizontal scrollbar.
-> * The peek runs amok when it's on the same line that's being decorated (or edited).
-> * The horizontal scrollbar overlays the peek, which is kind of terrible.
-
 ## FEATURES
 
 ## PUNT

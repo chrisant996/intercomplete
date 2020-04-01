@@ -1,23 +1,37 @@
 import * as vscode from 'vscode';
 
-// HACK:  VSCode executes commands concurrently; it doesn't ensure sequential
-// execution.  It also doesn't have any concurrency synchronization mechanisms.
-// So I'll try to mitigate the reentrancy flaw with a busy counter and double
-// checked increment to gate reentrancy.
+/**
+ * HACK!  VSCode executes commands concurrently; it doesn't ensure sequential
+ * execution.  It also doesn't have any concurrency synchronization mechanisms.
+ * So I'll try to mitigate the reentrancy flaw with a busy counter and double
+ * checked increment to gate reentrancy.
+ */
 let busy: number = 0;
 
 /**
- * inlineMode
- * 
- * Ideally intercomplete would detect when an edit or selection change happens
- * that wasn't caused by intercomplete.  But VSCode drops or coalesces selection
- * change notifications and document change notifications, making it very
- * difficult to compensate for that.
- * 
- * @constant true		Uses inline mode, but gets confused by fast input.
- * @constant false		NYI: Uses an input box, which is weird but reliable.
+ * Inline mode tracks a pseudo-modal state by predicting expected selection
+ * change and document change events.
+ *
+ * @constant true           => Use inline mode.
+ * @constant false          => NYI: Use an input box.
  */
-const inlineMode = true;
+const inlineMode: boolean = true;
+
+/**
+ * The original feedback mode was a peek-like decoration on the last line in the
+ * window.  But it shifts the line's actual text far to the right, which forces
+ * a horizontal scrollbar to show up.  It also has some jitter issues.
+ *
+ * The status bar item feedback mode lags behind and can jump around in the
+ * status bar if other status bar items respond to selection changes or content
+ * changes.
+ *
+ * @constant Default        => Use the default feedback mode.
+ * @constant Decoration     => Use the original peek-like decoration.
+ * @constant StatusBarItem  => Use a status bar item.
+ */
+enum FeedbackMode { Default, Decoration, StatusBarItem };
+let feedbackMode: FeedbackMode = FeedbackMode.Decoration;
 
 /**
  * Set environment parameter to enable debugging mode e.g in launch.json.
@@ -45,11 +59,12 @@ export function activate(context: vscode.ExtensionContext)
 		vscode.workspace.onDidChangeConfiguration(onDidChangeConfiguration),
 		vscode.window.onDidChangeActiveTextEditor(onDidChangeActiveEditor)
 	);
-	
+
 	if (inlineMode) {
 		context.subscriptions.push(
 			vscode.window.onDidChangeTextEditorSelection(onDidChangeEditorSelection),
-			vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument)
+			vscode.workspace.onDidChangeTextDocument(onDidChangeTextDocument),
+			vscode.window.onDidChangeTextEditorVisibleRanges(onDidChangeVisibleRanges)
 		);
 	}
 }
@@ -92,11 +107,14 @@ async function setContext(context: boolean)
 
 //#region Feedback.
 
+let scrollTimeout: NodeJS.Timeout | null;
 let decoratedEditor: vscode.TextEditor | undefined;
 let decorationTypeCapturedAnchor: vscode.TextEditorDecorationType | undefined;
 let decorationTypeReplaceRange: vscode.TextEditorDecorationType | undefined;
 let decorationTypePeek: vscode.TextEditorDecorationType | undefined;
 let decorationTypeEmptyPeek: vscode.TextEditorDecorationType | undefined;
+
+let statusBarItem: vscode.StatusBarItem | null;
 
 function makeCapturedAnchorDecoration(): vscode.TextEditorDecorationType
 {
@@ -132,9 +150,6 @@ function makePeekDecoration(): vscode.TextEditorDecorationType
 	const back = new vscode.ThemeColor('editor.wordHighlightStrongBackground');
 	return vscode.window.createTextEditorDecorationType({
 		after: {
-			// borderColor: fore,
-			// borderStyle: 'solid none none none',
-			// borderWidth: '1px',
 			color: fore,
 			backgroundColor: back,
 		},
@@ -144,13 +159,23 @@ function makePeekDecoration(): vscode.TextEditorDecorationType
 
 function makeEmptyPeekDecoration(): vscode.TextEditorDecorationType
 {
+	// const fore = new vscode.ThemeColor('editor.foreground');
+	// const back = new vscode.ThemeColor('editor.wordHighlightStrongBackground');
 	return vscode.window.createTextEditorDecorationType({
+		// after: {
+		// 	color: fore,
+		// 	backgroundColor: back,
+		// },
 		textDecoration: 'white-space: pre;'
 	});
 }
 
-function clearFeedback()
+function clearPeekFeedback()
 {
+	if (scrollTimeout) {
+		clearTimeout(scrollTimeout);
+		scrollTimeout = null;
+	}
 	if (decoratedEditor) {
 		if (decorationTypePeek) {
 			decoratedEditor.setDecorations(decorationTypePeek, []);
@@ -158,14 +183,33 @@ function clearFeedback()
 		if (decorationTypeEmptyPeek) {
 			decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
 		}
+	}
+}
+
+function clearFeedback()
+{
+	switch (feedbackMode) {
+		case FeedbackMode.Decoration:
+			clearPeekFeedback();
+			break;
+		case FeedbackMode.StatusBarItem:
+			if (statusBarItem) {
+				statusBarItem.text = '';
+				statusBarItem.hide();
+			}
+			break;
+	}
+
+	if (decoratedEditor) {
 		if (decorationTypeCapturedAnchor) {
 			decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
 		}
 		if (decorationTypeReplaceRange) {
 			decoratedEditor.setDecorations(decorationTypeReplaceRange, []);
 		}
-		decoratedEditor = undefined;
 	}
+
+	decoratedEditor = undefined;
 }
 
 function showFeedback(editor: vscode.TextEditor)
@@ -177,15 +221,6 @@ function showFeedback(editor: vscode.TextEditor)
 	}
 
 	decoratedEditor = editor;
-
-	//$ ensure the decoration types
-
-	if (!decorationTypePeek) {
-		decorationTypePeek = makePeekDecoration();
-	}
-	if (!decorationTypeEmptyPeek) {
-		decorationTypeEmptyPeek = makeEmptyPeekDecoration();
-	}
 	if (!decorationTypeCapturedAnchor) {
 		decorationTypeCapturedAnchor = makeCapturedAnchorDecoration();
 	}
@@ -193,71 +228,120 @@ function showFeedback(editor: vscode.TextEditor)
 		decorationTypeReplaceRange = makeReplaceRangeDecoration();
 	}
 
-	if (capturedAnchor && (capturedAnchor.line !== replaceRange?.start.line || capturedAnchor.character !== replaceRange?.start.character)) {
-		// First and last completely visible lines in editor.
-		if (debugMode && editor.visibleRanges.length < 1) { console.warn('showFeedback: the editor has no visible lines'); }
-		const firstVisibleLine = editor.visibleRanges[0].start.line;
-		const lastVisibleLine = editor.visibleRanges[0].end.line;
+	const showCapturedAnchor = capturedAnchor && replaceRange && (capturedAnchor.line !== replaceRange.start.line || capturedAnchor.character !== replaceRange.start.character);
 
-		// If capturedAnchor is already visible no need to show preview.
-		const anchorIsVisible = false;//firstVisibleLine <= capturedAnchor.line && capturedAnchor.line <= lastVisibleLine;
-		if (!anchorIsVisible) {
-			// Preview text => line number + captured completion text.
-			const peekLine = (lastVisibleLine === capturedAnchor.line) ? lastVisibleLine - 1 : lastVisibleLine;
-			let peekText = `From ${capturedAnchor.line}:  ## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}`;
+	switch (feedbackMode) {
 
-			// Replace whitespace indents with unicode white spaces => Otherwise they are not shown and the text is not indented to the correct position.
-			const unicodeWhitespace = String.fromCodePoint(0x00a0);
-			peekText = peekText.replace(/ /g, unicodeWhitespace);
-
-			// Handle tabs by replacing with 2 whitespaces for now.
-			peekText = peekText.replace(/\t/g, `${unicodeWhitespace}${unicodeWhitespace}`);
-
-			// Add 200 Unicode Whitespaces afterwards to push the text in this line out of screen.
-			peekText += Array(200).fill(unicodeWhitespace).join('');
-
-			const peekLinePos = new vscode.Position(peekLine, 0);
-			decoratedEditor.setDecorations(decorationTypePeek, [
-				{ // Preview content line decoration
-					range: new vscode.Range(peekLinePos, peekLinePos),
-					renderOptions: {
-						after: {
-							contentText: peekText
-						},
-					}
+		case FeedbackMode.Decoration:
+			{
+				if (!decorationTypePeek) {
+					decorationTypePeek = makePeekDecoration();
 				}
-			]);
+				if (!decorationTypeEmptyPeek) {
+					decorationTypeEmptyPeek = makeEmptyPeekDecoration();
+				}
 
-			if (peekLine === lastVisibleLine && peekLine + 1 < editor.document.lineCount) {
-				// Sometimes there is a half visible line below the complete visible line
-				// => add an empty text decoration here to push the original text of this line out of the screen.
-				const emptyText = Array(peekText.length).fill(unicodeWhitespace).join('');
-				const emptyLinePos = new vscode.Position(peekLine + 1, 0);
-				decoratedEditor.setDecorations(decorationTypeEmptyPeek, [
-					{ // Empty line decoration
-						range: new vscode.Range(emptyLinePos, emptyLinePos),
-						renderOptions: {
-							after: {
-								contentText: emptyText
-							}
-						}
+				if (showCapturedAnchor && capturedAnchor && replaceRange) {
+					// First and last completely visible lines in editor.
+					if (debugMode && editor.visibleRanges.length < 1) { console.warn('showFeedback: the editor has no visible lines'); }
+					const firstVisibleLine = editor.visibleRanges[0].start.line;
+					const lastVisibleLine = editor.visibleRanges[0].end.line;
+
+					// If capturedAnchor is already visible no need to show preview.
+					let showFeedback = true;//capturedAnchor.line < firstVisibleLine || lastVisibleLine < capturedAnchor.line;
+					if (lastVisibleLine - firstVisibleLine < 5) {
+						showFeedback = false;
 					}
-				]);
-			} else {
-				decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
-			}
-		} else {
-			decoratedEditor.setDecorations(decorationTypePeek, []);
-			decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
-		}
 
+					if (showFeedback) {
+						// Preview text => line number + captured completion text.
+						let peekLine = lastVisibleLine;
+						let emptyLine = peekLine + 1;
+						if (replaceRange.start.line >= peekLine) {
+							peekLine = firstVisibleLine;
+							emptyLine = peekLine - 1;
+						}
+
+						// let peekText = `From ${capturedAnchor.line}:  ## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}`;
+						let peekText = `Complete more from line ${capturedAnchor.line} >>  ${capturedText.substr(morePosition)}`;
+
+						// Replace whitespace indents with unicode white spaces => Otherwise they are not shown and the text is not indented to the correct position.
+						const unicodeWhitespace = String.fromCodePoint(0x00a0);
+						peekText = peekText.replace(/ /g, unicodeWhitespace);
+
+						// Handle tabs by replacing with 2 whitespaces for now.
+						peekText = peekText.replace(/\t/g, `${unicodeWhitespace}${unicodeWhitespace}`);
+
+						// Add 200 Unicode Whitespaces afterwards to push the text in this line out of screen.
+						peekText += Array(200).fill(unicodeWhitespace).join('');
+
+						const peekLinePos = new vscode.Position(peekLine, 0);
+						decoratedEditor.setDecorations(decorationTypePeek, [
+							{ // Preview content line decoration
+								range: new vscode.Range(peekLinePos, peekLinePos),
+								renderOptions: {
+									after: {
+										contentText: peekText
+									},
+								}
+							}
+						]);
+
+						if (emptyLine >= 0 && emptyLine < editor.document.lineCount) {
+							// Sometimes there is a half visible line adjacent to the peek line
+							// => add an empty text decoration here to push the original text of this line out of the screen.
+							const emptyText = Array(peekText.length).fill(unicodeWhitespace).join('');
+							const emptyLinePos = new vscode.Position(emptyLine, 0);
+							decoratedEditor.setDecorations(decorationTypeEmptyPeek, [
+								{ // Empty line decoration
+									range: new vscode.Range(emptyLinePos, emptyLinePos),
+									renderOptions: {
+										after: {
+											contentText: emptyText
+										}
+									}
+								}
+							]);
+						} else {
+							decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+						}
+					} else {
+						decoratedEditor.setDecorations(decorationTypePeek, []);
+						decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+					}
+				} else {
+					decoratedEditor.setDecorations(decorationTypePeek, []);
+					decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
+				}
+			}
+			break;
+
+		case FeedbackMode.StatusBarItem:
+			if (!statusBarItem) {
+				statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 9999);
+				statusBarItem.command = 'intercomplete.moreInterComplete';
+			}
+			if (capturedAnchor) {
+				let text = `$(edit) Complete from line ${capturedAnchor.line} $(right-triangle)  ${capturedText.substr(morePosition)}`;
+				const unicodeWhitespace = String.fromCodePoint(0x00a0);
+				text = text/*.replace(/ /g, unicodeWhitespace)*/.replace(/\t/g, `${unicodeWhitespace}${unicodeWhitespace}`);
+
+				statusBarItem.tooltip = `Click to complete more from line ${capturedAnchor.line}`;
+				statusBarItem.text = text;
+				statusBarItem.show();
+			} else {
+				statusBarItem.hide();
+			}
+			break;
+
+	}
+
+	if (showCapturedAnchor && capturedAnchor) {
 		const anchorDecorations = [{
 			range: new vscode.Range(capturedAnchor, new vscode.Position(capturedAnchor.line, capturedAnchor.character + morePosition))
 		}];
 		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, anchorDecorations);
 	} else {
-		decoratedEditor.setDecorations(decorationTypePeek, []);
-		decoratedEditor.setDecorations(decorationTypeEmptyPeek, []);
 		decoratedEditor.setDecorations(decorationTypeCapturedAnchor, []);
 	}
 
@@ -289,7 +373,7 @@ async function clearCapture()
 {
 	if (intercompleteContext) {
 		if (debugMode) { console.trace('clearCapture'); }
-		
+
 		await setContext(false);
 
 		intercompleteContext = false;
@@ -503,7 +587,19 @@ let expectedDocumentChanges: ExpectedDocumentChange[] = [];
 
 function onDidChangeConfiguration(cfg: vscode.ConfigurationChangeEvent)
 {
+	let reset = false;
 	if (cfg.affectsConfiguration('workbench.colorCustomizations')) {
+		reset = true;
+	}
+	if (cfg.affectsConfiguration('intercomplete.feedbackMode')) {
+		reset = true;
+		if (statusBarItem) {
+			statusBarItem.dispose();
+			statusBarItem = null;
+		}
+	}
+
+	if (reset) {
 		cancelInterComplete();
 		decorationTypePeek = undefined;
 		decorationTypeEmptyPeek = undefined;
@@ -681,6 +777,15 @@ async function onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent)
 
 	if (cancel) {
 		await clearCapture();
+	}
+}
+
+async function onDidChangeVisibleRanges()
+{
+	if (feedbackMode === FeedbackMode.Decoration) {
+		// Clear captured anchor decoration while scrolling because the decoration also scrolls.
+		clearPeekFeedback();
+		scrollTimeout = setTimeout(showFeedback, 150);
 	}
 }
 
