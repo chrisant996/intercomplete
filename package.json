@@ -73,18 +73,6 @@
 				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
 				"title": "Cancel interactive line completion"
 			}
-		],
-		"configuration": [
-			{
-				"title": "Interactive Line Completion",
-				"properties": {
-					"intercomplete.debugMode": {
-						"type": "boolean",
-						"default": false,
-						"description": "enable debug logging"
-					}
-				}
-			}
 		]
 	},
 	"scripts": {

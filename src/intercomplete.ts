@@ -19,12 +19,17 @@ let busy: number = 0;
  */
 const inlineMode = true;
 
+/**
+ * Set environment parameter to enable debugging mode e.g in launch.json.
+ *
+ * @example "env": { "INTERCOMPLETE_DEBUGMODE": "true" },
+ */
+const debugMode = process.env.INTERCOMPLETE_DEBUGMODE === 'true';
+
 //#region Activate and Deactivate.
 
 export function activate(context: vscode.ExtensionContext)
 {
-	updateDebugMode();
-
 	vscode.commands.executeCommand('setContext', INTERCOMPLETE_CONTEXT, false);
 
 	// Register commands.
@@ -53,7 +58,7 @@ export function deactivate() {}
 
 //#endregion
 
-//#region General.
+//#region Configuration.
 
 function getConfig<type = vscode.WorkspaceConfiguration>(key?: string, section: string = "intercomplete"): type
 {
@@ -63,12 +68,6 @@ function getConfig<type = vscode.WorkspaceConfiguration>(key?: string, section: 
 	return rawKey ?
 		configuration[rawKey] :
 		configuration;
-}
-
-let debugMode = false;
-function updateDebugMode()
-{
-	debugMode = getConfig<boolean>("debugMode");
 }
 
 //#endregion
@@ -504,9 +503,6 @@ let expectedDocumentChanges: ExpectedDocumentChange[] = [];
 
 function onDidChangeConfiguration(cfg: vscode.ConfigurationChangeEvent)
 {
-	if (cfg.affectsConfiguration('intercomplete.debugMode')) {
-		updateDebugMode();
-	}
 	if (cfg.affectsConfiguration('workbench.colorCustomizations')) {
 		cancelInterComplete();
 		decorationTypePeek = undefined;

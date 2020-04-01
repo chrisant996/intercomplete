@@ -13,6 +13,9 @@
 			"args": [
 				"--extensionDevelopmentPath=${workspaceFolder}"
 			],
+			"env": {
+				"INTERCOMPLETE_DEBUGMODE": "true"
+			},
 			"outFiles": [
 				"${workspaceFolder}/out/**/*.js"
 			],
