@@ -267,20 +267,21 @@ function showFeedback(editor: vscode.TextEditor | undefined)
 					const firstVisibleLine = editor.visibleRanges[0].start.line;
 					const lastVisibleLine = editor.visibleRanges[0].end.line;
 
+					let showFeedback = true;
 					// If capturedAnchor is already visible no need to show preview.
-					let showFeedback = true;//capturedAnchor.line < firstVisibleLine || lastVisibleLine < capturedAnchor.line;
-					if (lastVisibleLine - firstVisibleLine < 5) {
-						showFeedback = false;
-					}
-
+					// if (firstVisibleLine <= capturedAnchor.line && capturedAnchor.line <= lastVisibleLine) {
+					// 	showFeedback = false;
+					// }
 					if (showFeedback) {
 						// Preview text => line number + captured completion text.
 						let peekLine = lastVisibleLine;
-						let emptyLine = peekLine + 1;
-						if (replaceRange.start.line >= peekLine) {
-							peekLine = firstVisibleLine;
-							emptyLine = peekLine - 1;
+						if (peekLine === replaceRange.start.line) {
+							peekLine--;
 						}
+						const emptyLine: number | undefined = (
+							(peekLine === lastVisibleLine) ? peekLine + 1 :
+							(peekLine === firstVisibleLine) ? peekLine - 1 :
+							undefined);
 
 						// let peekText = `From ${capturedAnchor.line}:  ## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}`;
 						let peekText = `Complete more from line ${capturedAnchor.line} >>  ${capturedText.substr(morePosition)}`;
@@ -307,7 +308,7 @@ function showFeedback(editor: vscode.TextEditor | undefined)
 							}
 						]);
 
-						if (emptyLine >= 0 && emptyLine < editor.document.lineCount) {
+						if (emptyLine && emptyLine >= 0 && emptyLine < editor.document.lineCount) {
 							// Sometimes there is a half visible line adjacent to the peek line
 							// => add an empty text decoration here to push the original text of this line out of the screen.
 							const emptyText = Array(peekText.length).fill(unicodeWhitespace).join('');
@@ -342,8 +343,8 @@ function showFeedback(editor: vscode.TextEditor | undefined)
 				statusBarItem.command = 'intercomplete.moreInterComplete';
 			}
 			if (capturedAnchor) {
-				let text = `$(edit) Complete from line ${capturedAnchor.line} $(right-triangle)  ${capturedText.substr(morePosition)}`;
 				const unicodeWhitespace = String.fromCodePoint(0x00a0);
+				let text = `$(edit) Complete more $(triangle-right) ${capturedAnchor.line}:${unicodeWhitespace}${unicodeWhitespace}${capturedText.substr(morePosition)}`;
 				text = text/*.replace(/ /g, unicodeWhitespace)*/.replace(/\t/g, `${unicodeWhitespace}${unicodeWhitespace}`);
 
 				statusBarItem.tooltip = `Click to complete more from line ${capturedAnchor.line}`;
