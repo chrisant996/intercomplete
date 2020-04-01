@@ -5,7 +5,12 @@
 
 ## BUGS
 
-* Inline mode gets confused by dropped/coalesced selection change and document change events.
+> Inline mode gets confused by concurrent async commands!
+
+> Dismiss intellisense popups if possible!
+
+* Scrolling moves the peek -- should hide and show.
+* Make the peek use more lines so it isn't obscured by the horizontal scrollbar.
 
 ## FEATURES
 
