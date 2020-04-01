@@ -212,15 +212,20 @@ function clearFeedback()
 	decoratedEditor = undefined;
 }
 
-function showFeedback(editor: vscode.TextEditor)
+function showFeedback(editor: vscode.TextEditor | undefined)
 {
 	if (debugMode && !replaceRange) { console.warn("showFeedback: can't show feedback; replaceRange is undefined"); }
 
 	if (editor !== decoratedEditor) {
 		clearFeedback();
+		decoratedEditor = editor;
 	}
 
-	decoratedEditor = editor;
+	if (!editor || !decoratedEditor) {
+		if (debugMode) { console.error("showFeedback: editor is undefined"); }
+		return;
+	}
+
 	if (!decorationTypeCapturedAnchor) {
 		decorationTypeCapturedAnchor = makeCapturedAnchorDecoration();
 	}
@@ -780,12 +785,12 @@ async function onDidChangeTextDocument(e: vscode.TextDocumentChangeEvent)
 	}
 }
 
-async function onDidChangeVisibleRanges()
+async function onDidChangeVisibleRanges(e: vscode.TextEditorVisibleRangesChangeEvent)
 {
 	if (feedbackMode === FeedbackMode.Decoration) {
 		// Clear captured anchor decoration while scrolling because the decoration also scrolls.
 		clearPeekFeedback();
-		scrollTimeout = setTimeout(showFeedback, 150);
+		scrollTimeout = setTimeout(showFeedback, 150, e.textEditor);
 	}
 }
 
