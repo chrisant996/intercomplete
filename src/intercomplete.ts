@@ -733,7 +733,12 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie:
 	if (!capturedAnchor) {
 		if (debugMode) { console.log(`nextprevCapture ${cookie}: capturedAnchor is undefined -- start a new capture`); }
 
-		// Make sure it's pristine -- e.g. endOfNext/etc may not be reset yet.
+		// Close various popups.
+		vscode.commands.executeCommand('hideSuggestWidget');
+		vscode.commands.executeCommand('closeParameterHints');
+		vscode.commands.executeCommand('closeReferenceSearch');
+
+		// Make sure it's fully reset -- e.g. endOfNext/etc may not be reset yet.
 		await clearCapture();
 
 		let pos = editor.selection.active;
