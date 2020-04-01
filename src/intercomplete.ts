@@ -357,7 +357,6 @@ async function insertCapturedText(editor: vscode.TextEditor, cookie: number)
 		});
 
 		if (debugMode) {
-			console.log(`insertCapturedText ${cookie}: after editor.edit...`);
 			console.log(`insertCapturedText ${cookie}: set replaceRange = ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.start.line},${replaceRange.start.character + morePosition}`);
 			console.log(`insertCapturedText ${cookie}: set editor.selection = ${replaceRange.end.line},${replaceRange.end.character}`);
 		}
@@ -400,11 +399,9 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 	const docLine = editor.document.lineAt(line);
 	capturedText = docLine.text.substr(character);
 
-	if (debugMode) { console.log(`captureLine ${cookie}: morePosition = 0`); }
 	morePosition = 0;
 	if (line === replaceRange.start.line && character === replaceRange.start.character) {
 		morePosition = capturedKeyword.length;
-		if (debugMode) { console.log(`captureLine ${cookie}: capturedAnchor === replaceRange.start`); }
 	} else {
 		while (morePosition < capturedText.length) {
 			if (wordRegExp.exec(capturedText.charAt(morePosition)) === null) {
@@ -414,10 +411,7 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 		}
 	}
 
-	if (debugMode) {
-		console.log(`captureLine ${cookie}: morePosition = ${morePosition}`);
-		console.log(`captureLine ${cookie}: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`);
-	}
+	if (debugMode) { console.log(`captureLine ${cookie}: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, morePosition ${morePosition}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
 
 	await insertCapturedText(editor, cookie);
 }
@@ -772,7 +766,7 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie:
 
 	await anchorNextPrev(editor, next, cookie);
 
-	if (debugMode) { console.log(`nextprevCapture ${cookie}: finished`); }
+	//REMOVE: if (debugMode) { console.log(`nextprevCapture ${cookie}: finished`); }
 }
 
 export async function moreInterComplete(): Promise<void>
@@ -817,11 +811,11 @@ async function moreCapture(editor: vscode.TextEditor, cookie: number)
 		morePosition++;
 	}
 
-	if (debugMode) { console.log(`moreCapture ${cookie}: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
+	//REMOVE: if (debugMode) { console.log(`moreCapture ${cookie}: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
 
 	await insertCapturedText(editor, cookie);
 
-	if (debugMode) { console.log(`moreCapture ${cookie}: finished`); }
+	//REMOVE: if (debugMode) { console.log(`moreCapture ${cookie}: finished`); }
 }
 
 export async function cancelInterComplete(): Promise<void>
