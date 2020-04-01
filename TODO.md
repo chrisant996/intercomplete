@@ -4,8 +4,6 @@
 
 ## BUGS
 
-> Inline mode gets confused by concurrent async commands!
-
 > Dismiss intellisense popups if possible!
 
 > Basically the peek is a hack that's not going to work out:

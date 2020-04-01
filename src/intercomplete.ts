@@ -1,5 +1,11 @@
 import * as vscode from 'vscode';
 
+// HACK:  VSCode executes commands concurrently; it doesn't ensure sequential
+// execution.  It also doesn't have any concurrency synchronization mechanisms.
+// So I'll try to mitigate the reentrancy flaw with a busy counter and double
+// checked increment to gate reentrancy.
+let busy: number = 0;
+
 /**
  * inlineMode
  * 
@@ -696,32 +702,40 @@ let commandNumber = 0;
 
 export async function prevInterComplete(): Promise<void>
 {
-	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor || editor.selections.length !== 1) {
-		return;
-	}
+	busy++;
+	if (busy === 1) {
 
-	if (debugMode) {
-		commandNumber++;
-		console.log(`prevInterComplete: commandNumber ${commandNumber}`);
-	}
+		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
+		if (editor && editor.selections.length === 1) {
+			if (debugMode) {
+				commandNumber++;
+				console.log(`prevInterComplete: commandNumber ${commandNumber}`);
+			}
 
-	return nextprevCapture(editor, false/*next*/, commandNumber);
+			await nextprevCapture(editor, false/*next*/, commandNumber);
+		}
+
+	}
+	busy--;
 }
 
 export async function nextInterComplete(): Promise<void>
 {
-	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor || editor.selections.length !== 1) {
-		return;
-	}
+	busy++;
+	if (busy === 1) {
 
-	if (debugMode) {
-		commandNumber++;
-		console.log(`nextInterComplete: commandNumber ${commandNumber}`);
-	}
+		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
+		if (editor && editor.selections.length === 1) {
+			if (debugMode) {
+				commandNumber++;
+				console.log(`nextInterComplete: commandNumber ${commandNumber}`);
+			}
 
-	return nextprevCapture(editor, true/*next*/, commandNumber);
+			await nextprevCapture(editor, true/*next*/, commandNumber);
+		}
+
+	}
+	busy--;
 }
 
 async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie: number): Promise<void>
@@ -763,17 +777,21 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie:
 
 export async function moreInterComplete(): Promise<void>
 {
-	let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
-	if (!editor || editor.selections.length !== 1) {
-		return;
-	}
+	busy++;
+	if (busy === 1) {
 
-	if (debugMode) {
-		commandNumber++;
-		console.log(`moreInterComplete: commandNumber ${commandNumber}`);
-	}
+		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
+		if (editor && editor.selections.length === 1) {
+			if (debugMode) {
+				commandNumber++;
+				console.log(`moreInterComplete: commandNumber ${commandNumber}`);
+			}
 
-	return moreCapture(editor, commandNumber);
+			await moreCapture(editor, commandNumber);
+		}
+
+	}
+	busy--;
 }
 
 async function moreCapture(editor: vscode.TextEditor, cookie: number)
@@ -808,7 +826,13 @@ async function moreCapture(editor: vscode.TextEditor, cookie: number)
 
 export async function cancelInterComplete(): Promise<void>
 {
-	return clearCapture();
+	busy++;
+	if (busy === 1) {
+
+		await clearCapture();
+
+	}
+	busy--;
 }
 
 //#endregion
