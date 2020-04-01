@@ -52,22 +52,22 @@
 			{
 				"key": "ctrl+shift+,",
 				"command": "intercomplete.prevInterComplete",
-				"when": "editorTextFocus && !editorReadonly",
+				"when": "editorTextFocus && !editorReadonly"
 			},
 			{
 				"key": "ctrl+shift+.",
 				"command": "intercomplete.nextInterComplete",
-				"when": "editorTextFocus && !editorReadonly",
+				"when": "editorTextFocus && !editorReadonly"
 			},
 			{
 				"key": "ctrl+shift+space",
 				"command": "intercomplete.moreInterComplete",
-				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive"
 			},
 			{
 				"key": "escape",
 				"command": "intercomplete.cancelInterComplete",
-				"when": "editorTextFocus && !editorReadonly && intercompleteActive",
+				"when": "editorTextFocus && !editorReadonly && intercompleteActive"
 			}
 		],
 		"configuration": [
