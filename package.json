@@ -11,7 +11,7 @@
 		"Snippets",
 		"Other"
 	],
-	"keywords": ["complete", "completion", "copy", "editing", "slickedit"],
+	"keywords": ["interactive", "anchor", "word", "line", "complete", "completion", "copy", "editing", "slickedit"],
 	"bugs": {
 		"url": "https://github.com/chrisant996/intercomplete/issues"
 	},
