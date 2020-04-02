@@ -3,7 +3,7 @@
 	"displayName": "Interactive Line Completion",
 	"description": "Interactive choose an anchor word and iteratively complete more following the anchor",
 	"publisher": "chrisant996",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"engines": {
 		"vscode": "^1.43.0"
 	},
