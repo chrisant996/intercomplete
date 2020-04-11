@@ -5,6 +5,11 @@ All notable changes to the "intercomplete" extension will be documented in this 
 - Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Follows [Semantic Versioning](https://semver.org/).
 
+## 0.2.0
+
+- Improved performance somewhat.
+- Fixed creating undo operations when the text to be inserted matches what's already there.
+
 ## [0.1.2](https://github.com/chrisant996/intercomplete/tree/4d8159572d73fd78803f725a45e6e3e2014fa826)
 
 - Initial release.

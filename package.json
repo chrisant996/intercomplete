@@ -3,7 +3,7 @@
 	"displayName": "InterComplete",
 	"description": "Interactive choose an anchor word and iteratively complete more following the anchor",
 	"publisher": "chrisant996",
-	"version": "0.1.2",
+	"version": "0.2.0",
 	"engines": {
 		"vscode": "^1.43.0"
 	},
