@@ -229,7 +229,7 @@ function clearFeedback()
 
 function showFeedback(editor: vscode.TextEditor | undefined)
 {
-	if (debugMode && !replaceRange) { console.warn("showFeedback: can't show feedback; replaceRange is undefined"); }
+	if (debugMode && !replaceRange) { console.log("showFeedback: can't show feedback; replaceRange is undefined"); }
 
 	if (editor !== decoratedEditor) {
 		clearFeedback();
@@ -237,7 +237,7 @@ function showFeedback(editor: vscode.TextEditor | undefined)
 	}
 
 	if (!editor || !decoratedEditor) {
-		if (debugMode) { console.error("showFeedback: editor is undefined"); }
+		if (debugMode) { console.log("showFeedback: editor is undefined"); }
 		return;
 	}
 
@@ -388,13 +388,13 @@ let morePosition: number = 0;
 let endOfPrev: boolean = false;
 let endOfNext: boolean = false;
 
-const wordRegExp = /\w/;
+const lastWordRegExp = /(\W|^)(\w+)$/;
+const firstWordRegExp = /^(\w+)(\W|$)/;
+const moreRegExp = /^(\W*\w+)(\W|$)/;
 
 async function clearCapture()
 {
 	if (intercompleteContext) {
-		if (debugMode) { console.trace('clearCapture'); }
-
 		await setContext(false);
 
 		intercompleteContext = false;
@@ -421,9 +421,7 @@ async function insertCapturedText(editor: vscode.TextEditor, cookie: number)
 		return;
 	}
 
-	if (debugMode) {
-		console.log(`insertCapturedText ${cookie}:`);
-	}
+	if (debugMode) { console.log(`insertCapturedText ${cookie}:`); }
 
 	try {
 
@@ -452,21 +450,23 @@ async function insertCapturedText(editor: vscode.TextEditor, cookie: number)
 			}
 		}
 
-		await editor.edit(e =>
-		{
-			if (replaceRange) {
-				e.delete(replaceRange);
-				e.insert(replaceRange.start, replaceWith);
+		if (editor.document.getText(replaceRange) !== replaceWith) {
+			await editor.edit(e =>
+			{
+				if (replaceRange) {
+					e.delete(replaceRange);
+					e.insert(replaceRange.start, replaceWith);
+				}
+			});
+
+			if (debugMode) {
+				console.log(`insertCapturedText ${cookie}: set replaceRange = ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.start.line},${replaceRange.start.character + morePosition}`);
+				console.log(`insertCapturedText ${cookie}: set editor.selection = ${replaceRange.end.line},${replaceRange.end.character}`);
 			}
-		});
 
-		if (debugMode) {
-			console.log(`insertCapturedText ${cookie}: set replaceRange = ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.start.line},${replaceRange.start.character + morePosition}`);
-			console.log(`insertCapturedText ${cookie}: set editor.selection = ${replaceRange.end.line},${replaceRange.end.character}`);
+			replaceRange = new vscode.Range(replaceRange.start.line, replaceRange.start.character, replaceRange.start.line, replaceRange.start.character + morePosition);
+			editor.selection = new vscode.Selection(replaceRange.end, replaceRange.end);
 		}
-
-		replaceRange = new vscode.Range(replaceRange.start.line, replaceRange.start.character, replaceRange.start.line, replaceRange.start.character + morePosition);
-		editor.selection = new vscode.Selection(replaceRange.end, replaceRange.end);
 
 		showFeedback(editor);
 
@@ -507,12 +507,7 @@ async function captureLine(editor: vscode.TextEditor, line: number, character: n
 	if (line === replaceRange.start.line && character === replaceRange.start.character) {
 		morePosition = capturedKeyword.length;
 	} else {
-		while (morePosition < capturedText.length) {
-			if (wordRegExp.exec(capturedText.charAt(morePosition)) === null) {
-				break;
-			}
-			morePosition++;
-		}
+		morePosition = getMoreFromString(capturedText).length;
 	}
 
 	if (debugMode) { console.log(`captureLine ${cookie}: line ${capturedAnchor?.line}, char ${capturedAnchor?.character}, morePosition ${morePosition}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
@@ -536,12 +531,10 @@ async function anchorNextPrev(editor: vscode.TextEditor, next: boolean, cookie: 
 
 			// Advance past the current word.
 			{
-				const tmp = doc.lineAt(yy).text;
-				while (xx < tmp.length) {
-					if (!wordRegExp.exec(tmp.charAt(xx))) {
-						break;
-					}
-					xx++;
+				const theRest = doc.lineAt(yy).text.substr(xx);
+				const matches = firstWordRegExp.exec(theRest);
+				if (matches) {
+					xx += matches[0].length;
 				}
 			}
 
@@ -552,7 +545,7 @@ async function anchorNextPrev(editor: vscode.TextEditor, next: boolean, cookie: 
 					if (xx > 0) {
 						str = str.substr(xx);
 					}
-					const match: RegExpExecArray | null = regexp.exec(str);
+					const match = regexp.exec(str);
 					if (match) {
 						return captureLine(editor, yy, xx + match.index + match[1].length, cookie);
 					}
@@ -824,11 +817,6 @@ export async function prevInterComplete(): Promise<void>
 
 		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
 		if (editor && editor.selections.length === 1) {
-			if (debugMode) {
-				commandNumber++;
-				console.log(`prevInterComplete: commandNumber ${commandNumber}`);
-			}
-
 			await nextprevCapture(editor, false/*next*/, commandNumber);
 		}
 
@@ -843,11 +831,6 @@ export async function nextInterComplete(): Promise<void>
 
 		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
 		if (editor && editor.selections.length === 1) {
-			if (debugMode) {
-				commandNumber++;
-				console.log(`nextInterComplete: commandNumber ${commandNumber}`);
-			}
-
 			await nextprevCapture(editor, true/*next*/, commandNumber);
 		}
 
@@ -872,13 +855,8 @@ async function nextprevCapture(editor: vscode.TextEditor, next: boolean, cookie:
 		let line = editor.document.lineAt(pos.line);
 
 		const end = pos.character;
-		let start = end;
-		while (start > 0) {
-			if (wordRegExp.exec(line.text.charAt(start - 1)) === null) {
-				break;
-			}
-			start--;
-		}
+		const matches = lastWordRegExp.exec(line.text.substr(0, end));
+		const start = matches ? end - matches[2].length : end;
 
 		if (start > end) {
 			if (debugMode) { console.log(`nextprevCapture ${cookie}: couldn't initialize a new capture.`); }
@@ -904,11 +882,6 @@ export async function moreInterComplete(): Promise<void>
 
 		let editor: vscode.TextEditor | undefined = vscode.window.activeTextEditor;
 		if (editor && editor.selections.length === 1) {
-			if (debugMode) {
-				commandNumber++;
-				console.log(`moreInterComplete: commandNumber ${commandNumber}`);
-			}
-
 			await moreCapture(editor, commandNumber);
 		}
 
@@ -923,27 +896,13 @@ async function moreCapture(editor: vscode.TextEditor, cookie: number)
 		return;
 	}
 
-	// Skip non-word characters.
-	while (morePosition < capturedText.length) {
-		if (wordRegExp.exec(capturedText.substr(morePosition, 1))) {
-			break;
-		}
-		morePosition++;
+	const moreText = getMoreFromString(capturedText.substr(morePosition));
+	if (moreText.length > 0) {
+		if (debugMode) { console.log(`moreCapture ${cookie}: expand more "${moreText}"`); }
+		morePosition += moreText.length;
+
+		await insertCapturedText(editor, cookie);
 	}
-
-	// Include word characers.
-	while (morePosition < capturedText.length) {
-		if (!wordRegExp.exec(capturedText.substr(morePosition, 1))) {
-			break;
-		}
-		morePosition++;
-	}
-
-	//REMOVE: if (debugMode) { console.log(`moreCapture ${cookie}: line ${capturedAnchor.line}, char ${capturedAnchor.character}, "## ${capturedText.substr(0, morePosition)} ## ${capturedText.substr(morePosition)}"`); }
-
-	await insertCapturedText(editor, cookie);
-
-	//REMOVE: if (debugMode) { console.log(`moreCapture ${cookie}: finished`); }
 }
 
 export async function cancelInterComplete(): Promise<void>
@@ -955,6 +914,16 @@ export async function cancelInterComplete(): Promise<void>
 
 	}
 	busy--;
+}
+
+//#endregion
+
+//#region Helpers
+
+function getMoreFromString(text: string): string
+{
+	const matches = moreRegExp.exec(text);
+	return matches ? matches[1] : text;
 }
 
 //#endregion
