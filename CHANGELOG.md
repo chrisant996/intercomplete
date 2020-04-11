@@ -5,7 +5,7 @@ All notable changes to the "intercomplete" extension will be documented in this 
 - Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Follows [Semantic Versioning](https://semver.org/).
 
-## 0.2.1
+## [0.2.1](https://github.com/chrisant996/intercomplete/tree/e8aaa22a56148924002016d590919c428ba203d9)
 
 ### Fixed
 
