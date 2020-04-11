@@ -431,32 +431,35 @@ async function insertCapturedText(editor: vscode.TextEditor, cookie: number)
 		}
 
 		const replaceWith = capturedText.substr(0, morePosition);
-
-		expectedSelectionChanges.push(replaceRange.start.character + morePosition);
-		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.end.character, text: "" });
-		expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.start.character, text: replaceWith });
-
-		if (debugMode) {
-			console.warn(`insertCapturedText ${cookie}: ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.end.line},${replaceRange.end.character} "${replaceWith}"`);
-			console.log(`  morePosition ${morePosition}`);
-			console.log('  insertCapturedText: expected changes...');
-			console.log('    expected selection changes:');
-			for (let sc of expectedSelectionChanges) {
-				console.log(`      ${replaceRange.start.line},${sc}`);
-			}
-			console.log('    expected document changes:');
-			for (let dc of expectedDocumentChanges) {
-				console.log(`      ${replaceRange.start.line},${dc.start}..${replaceRange.start.line},${dc.end} "${dc.text}"`);
-			}
-		}
-
 		if (editor.document.getText(replaceRange) !== replaceWith) {
+
+			// The "expected changes" need to match what happens in the
+			// editor.edit() section further below.
+			expectedSelectionChanges.push(replaceRange.start.character + morePosition);
+			expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.end.character, text: "" });
+			expectedDocumentChanges.push({ start: replaceRange.start.character, end: replaceRange.start.character, text: replaceWith });
+
+			if (debugMode) {
+				console.warn(`insertCapturedText ${cookie}: ${replaceRange.start.line},${replaceRange.start.character}..${replaceRange.end.line},${replaceRange.end.character} "${replaceWith}"`);
+				console.log(`  morePosition ${morePosition}`);
+				console.log('  insertCapturedText: expected changes...');
+				console.log('    expected selection changes:');
+				for (let sc of expectedSelectionChanges) {
+					console.log(`      ${replaceRange.start.line},${sc}`);
+				}
+				console.log('    expected document changes:');
+				for (let dc of expectedDocumentChanges) {
+					console.log(`      ${replaceRange.start.line},${dc.start}..${replaceRange.start.line},${dc.end} "${dc.text}"`);
+				}
+			}
+
+			// The selection needs to end up at the end of what's inserted, but
+			// edit.replace selects everything that's inserted.  So instead the
+			// sequence needs to be edit.delete then edit.insert.
 			await editor.edit(e =>
 			{
-				if (replaceRange) {
-					e.delete(replaceRange);
-					e.insert(replaceRange.start, replaceWith);
-				}
+				e.delete(replaceRange!);
+				e.insert(replaceRange!.start, replaceWith);
 			});
 
 			if (debugMode) {
