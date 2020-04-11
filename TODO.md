@@ -1,7 +1,5 @@
 # TODO
 
-* [ ] Build a modal solution, maybe using an input box.
-
 ## BUGS
 
 ## FEATURES
