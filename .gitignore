@@ -7,3 +7,4 @@ node_modules/*
 !.vscode/extensions.json
 *.code-workspace
 *.vsix
+*.cpuprofile.txt
