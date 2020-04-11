@@ -128,7 +128,7 @@ function makeCapturedAnchorDecoration(): vscode.TextEditorDecorationType
 		overviewRulerColor: back,
 		overviewRulerLane: vscode.OverviewRulerLane.Full,
 		borderColor: fore,
-		borderStyle: 'dashed',
+		borderStyle: 'none none dotted none',
 		borderWidth: '1px'
 	});
 }
@@ -141,7 +141,7 @@ function makeReplaceRangeDecoration(): vscode.TextEditorDecorationType
 		color: fore,
 		backgroundColor: back,
 		borderColor: fore,
-		borderStyle: 'dashed',
+		borderStyle: 'none none dotted none',
 		borderWidth: '1px'
 	});
 }
